@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.kiosk.app.presentation.KioskViewModel
 
+private const val LOAD_TIMEOUT_MS = 10_000L
+
 @Composable
 fun KioskWebView(vm: KioskViewModel) {
     val context = LocalContext.current
@@ -35,16 +37,16 @@ fun KioskWebView(vm: KioskViewModel) {
     var lastLoadedUrl by remember { mutableStateOf<String?>(null) }
 
     val handler = remember { Handler(Looper.getMainLooper()) }
-    var timeoutRunnable by remember { mutableStateOf<Runnable?>(null) }
-
-    LaunchedEffect(state.isOnline) {
-        if (state.isOnline && state.lastError != null) {
-            lastLoadedUrl = null
+    val loadTimeout = remember {
+        Runnable {
+            if (vm.state.value.isPageLoading) {
+                vm.onWebError("Таймаут загрузки (10 сек)")
+            }
         }
     }
 
-    val webView = remember {
-        WebView(context).apply {
+    val webView = remember(vm, handler, loadTimeout) {
+        WebView(context.applicationContext).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -59,6 +61,7 @@ fun KioskWebView(vm: KioskViewModel) {
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
+                @Suppress("DEPRECATION")
                 databaseEnabled = true
                 cacheMode = WebSettings.LOAD_NO_CACHE
                 useWideViewPort = true
@@ -79,28 +82,31 @@ fun KioskWebView(vm: KioskViewModel) {
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
-                    vm.onPageLoaded()
+                    handler.removeCallbacks(loadTimeout)
 
-                    // Отменяем таймаут при успешной загрузке
-                    timeoutRunnable?.let { handler.removeCallbacks(it) }
+                    if (vm.state.value.lastError == null) {
+                        vm.onPageLoaded()
 
-                    // Принудительный viewport
-                    view?.evaluateJavascript("""
-                        var meta = document.createElement('meta');
-                        meta.name = 'viewport';
-                        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
-                        document.head.appendChild(meta);
-                    """.trimIndent(), null)
+                        view?.evaluateJavascript(
+                            """
+                            var meta = document.createElement('meta');
+                            meta.name = 'viewport';
+                            meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+                            document.head.appendChild(meta);
+                            """.trimIndent(),
+                            null
+                        )
+                    }
                 }
 
                 override fun onReceivedSslError(
                     view: WebView?,
-                    handler: SslErrorHandler?,
+                    sslErrorHandler: SslErrorHandler?,
                     error: SslError?
                 ) {
-                    handler?.cancel()
+                    sslErrorHandler?.cancel()
+                    handler.removeCallbacks(loadTimeout)
                     vm.onWebError("SSL ошибка")
-                    timeoutRunnable?.let { handler?.removeCallbacks(it) }
                 }
 
                 override fun onReceivedError(
@@ -109,9 +115,9 @@ fun KioskWebView(vm: KioskViewModel) {
                     error: WebResourceError?
                 ) {
                     if (request?.isForMainFrame == true) {
+                        handler.removeCallbacks(loadTimeout)
                         vm.onWebError("Ошибка загрузки: ${error?.description ?: "Неизвестно"}")
                     }
-                    timeoutRunnable?.let { handler.removeCallbacks(it) }
                 }
             }
         }
@@ -134,25 +140,14 @@ fun KioskWebView(vm: KioskViewModel) {
                     addView(webView)
                 }
             },
-            update = { frameLayout ->
+            update = {
                 val currentUrl = state.url
 
-                if (currentUrl != lastLoadedUrl ||
-                    (state.isOnline && state.lastError != null) ||
-                    (state.isOnline && lastLoadedUrl == null)
-                ) {
+                if (state.isOnline && currentUrl != lastLoadedUrl) {
                     lastLoadedUrl = currentUrl
 
-                    // Сбрасываем предыдущий таймаут
-                    timeoutRunnable?.let { handler.removeCallbacks(it) }
-
-                    // Новый таймаут 10 секунд
-                    timeoutRunnable = Runnable {
-                        if (state.isPageLoading) {
-                            vm.onWebError("Таймаут загрузки (10 сек)")
-                        }
-                    }
-                    handler.postDelayed(timeoutRunnable!!, 10000)
+                    handler.removeCallbacks(loadTimeout)
+                    handler.postDelayed(loadTimeout, LOAD_TIMEOUT_MS)
 
                     webView.loadUrl(currentUrl)
                 }
@@ -160,9 +155,16 @@ fun KioskWebView(vm: KioskViewModel) {
             modifier = Modifier.fillMaxSize()
         )
 
-        if (state.lastError != null || state.isPageLoading) {
+        val overlayMessage = when {
+            !state.isOnline -> "Нет подключения к интернету\nОжидание сети..."
+            state.lastError != null -> state.lastError
+            state.isPageLoading -> "Загрузка страницы..."
+            else -> null
+        }
+
+        if (overlayMessage != null) {
             OfflineOverlay(
-                message = state.lastError ?: "Загрузка страницы...",
+                message = overlayMessage,
                 retryCount = state.retryCount
             )
         }
@@ -170,35 +172,9 @@ fun KioskWebView(vm: KioskViewModel) {
 
     DisposableEffect(Unit) {
         onDispose {
-            timeoutRunnable?.let { handler.removeCallbacks(it) }
+            handler.removeCallbacks(loadTimeout)
             webView.stopLoading()
             webView.destroy()
-        }
-    }
-}
-
-@Composable
-private fun OfflineOverlay(message: String, retryCount: Int = 0) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(ComposeColor.Black.copy(alpha = 0.85f)),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = message,
-                color = ComposeColor.White,
-                fontSize = 18.sp
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            if (retryCount > 0) {
-                Text(
-                    text = "Попытка ${retryCount + 1} из 10...",
-                    color = ComposeColor.Gray,
-                    fontSize = 14.sp
-                )
-            }
         }
     }
 }

@@ -5,7 +5,6 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// Определяем цветовую схему для киоска
 private val KioskColorScheme = darkColorScheme(
     primary = Purple80,
     secondary = PurpleGrey80,

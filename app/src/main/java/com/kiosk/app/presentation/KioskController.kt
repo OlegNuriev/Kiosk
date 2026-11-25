@@ -21,10 +21,6 @@ class KioskController {
         insetsController.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
-
-        insetsController.systemBarsBehavior =
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-
         ViewCompat.setOnApplyWindowInsetsListener(decorView) { _, insets ->
             val statusBarsVisible = insets.isVisible(WindowInsetsCompat.Type.statusBars())
             val navigationBarsVisible = insets.isVisible(WindowInsetsCompat.Type.navigationBars())

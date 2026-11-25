@@ -20,7 +20,6 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-
     signingConfigs {
         create("release") {
             storeFile = file("../keystore/kiosk.keystore")
@@ -56,19 +55,16 @@ android {
 }
 
 dependencies {
-    // Основные
     implementation("androidx.core:core-ktx:1.13.1")
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
 
-    // Compose
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
 
-    // Тесты
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -77,23 +73,17 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
-    // Hilt
     implementation("com.google.dagger:hilt-android:2.51")
     kapt("com.google.dagger:hilt-compiler:2.51")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
-    // WakeLock / Worker
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
-    // Для запуска Chrome
     implementation("androidx.browser:browser:1.8.0")
 
-    // Чтение файла
     implementation("androidx.documentfile:documentfile:1.0.1")
 
-    // NanoHTTPD
     implementation("org.nanohttpd:nanohttpd:2.3.1")
 
-    // DataStore
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 }

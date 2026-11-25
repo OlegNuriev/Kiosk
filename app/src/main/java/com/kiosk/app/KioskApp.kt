@@ -1,6 +1,8 @@
 package com.kiosk.app
 
 import android.app.Application
+import android.os.Handler
+import android.os.Looper
 import android.widget.Toast
 import dagger.hilt.android.HiltAndroidApp
 import kotlin.system.exitProcess
@@ -11,6 +13,7 @@ class KioskApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             Toast.makeText(
                 this,
@@ -18,9 +21,9 @@ class KioskApp : Application() {
                 Toast.LENGTH_LONG
             ).show()
 
-            android.os.Handler(mainLooper).postDelayed({
-                exitProcess(1)
-            }, 5000)
+            Handler(Looper.getMainLooper()).postDelayed({
+                defaultHandler?.uncaughtException(thread, throwable) ?: exitProcess(1)
+            }, 1000)
         }
     }
 }

@@ -11,14 +11,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-
 data class KioskState(
-
     val url: String = KioskConfig.URL_Test,
-    val isOnline: Boolean = true,
+    val isOnline: Boolean = false,
     val isPageLoading: Boolean = false,
     val lastError: String? = null,
     val retryCount: Int = 0
@@ -29,24 +28,20 @@ class KioskViewModel @Inject constructor(
     networkMonitor: NetworkMonitor
 ) : ViewModel() {
 
+    private companion object {
+        const val MAX_RETRIES = 10
+    }
+
     private val _state = MutableStateFlow(KioskState())
     val state: StateFlow<KioskState> = _state.asStateFlow()
 
     private var retryJob: Job? = null
-
     private var webViewReload: (() -> Unit)? = null
 
     init {
-
         viewModelScope.launch {
             networkMonitor.isOnline.collect { online ->
-                _state.update { it.copy(isOnline = online) }
-                if (online) {
-                    retryJob?.cancel()
-                    retryJob = null
-                    _state.update { it.copy(lastError = null, retryCount = 0) }
-                    webViewReload?.invoke()
-                }
+                onConnectivityChanged(online)
             }
         }
     }
@@ -59,8 +54,7 @@ class KioskViewModel @Inject constructor(
         _state.update { it.copy(isPageLoading = true) }
     }
 
-        fun onPageLoaded() {
-
+    fun onPageLoaded() {
         retryJob?.cancel()
         retryJob = null
 
@@ -74,10 +68,28 @@ class KioskViewModel @Inject constructor(
     }
 
     fun onWebError(message: String) {
-        _state.update { it.copy(lastError = message) }
+        _state.update { it.copy(lastError = message, isPageLoading = false) }
 
-        if (retryJob == null) {
+        if (_state.value.isOnline) {
             scheduleRetry()
+        }
+    }
+
+    private fun onConnectivityChanged(online: Boolean) {
+        val wasOnline = _state.value.isOnline
+        _state.update { it.copy(isOnline = online) }
+
+        if (online) {
+            if (wasOnline && _state.value.lastError == null) return
+
+            retryJob?.cancel()
+            retryJob = null
+            _state.update { it.copy(lastError = null, retryCount = 0) }
+            webViewReload?.invoke()
+        } else {
+            retryJob?.cancel()
+            retryJob = null
+            _state.update { it.copy(isPageLoading = false, retryCount = 0) }
         }
     }
 
@@ -87,22 +99,24 @@ class KioskViewModel @Inject constructor(
         retryJob = viewModelScope.launch {
             var attempt = 0
 
-            while (attempt < 10) {
+            while (attempt < MAX_RETRIES && isActive) {
                 delay(backoffMs(attempt))
                 attempt++
 
                 _state.update { it.copy(retryCount = attempt) }
 
-                if (_state.value.isOnline && !_state.value.isPageLoading) {
-                    webViewReload?.invoke()
-                }
+                if (!_state.value.isOnline) break
+                if (_state.value.isPageLoading) continue
+
+                _state.update { it.copy(lastError = null) }
+                webViewReload?.invoke()
             }
         }
     }
 
     private fun backoffMs(attempt: Int): Long {
-        val base = 2000L   // 2 секунды
-        val max = 30000L  // максимум 30 секунд
+        val base = 2000L
+        val max = 30000L
         return (base * (1L shl attempt.coerceAtMost(4))).coerceAtMost(max)
     }
 }

@@ -1,13 +1,14 @@
 package com.kiosk.app.presentation
 
 import android.app.AlertDialog
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
-import androidx.activity.viewModels
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.lifecycleScope
 import com.kiosk.app.domain.repository.AppPreferencesRepository
@@ -21,8 +22,6 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var appPreferencesRepository: AppPreferencesRepository
     @Inject lateinit var kioskController: KioskController
-
-    private val vm: KioskViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,6 +39,14 @@ class MainActivity : ComponentActivity() {
         kioskController.applyWindow(this)
 
         window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                }
+            }
+        )
 
         setContent {
             KioskWebView(hiltViewModel())
@@ -67,7 +74,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         return when (keyCode) {
-            KeyEvent.KEYCODE_BACK,
             KeyEvent.KEYCODE_MENU,
             KeyEvent.KEYCODE_APP_SWITCH,
             KeyEvent.KEYCODE_SEARCH -> true
@@ -79,8 +85,12 @@ class MainActivity : ComponentActivity() {
         super.onPause()
 
         window.decorView.postDelayed({
-            if (!isFinishing) {
-                startActivity(intent)
+            if (!isFinishing && !isDestroyed) {
+                startActivity(
+                    Intent(this, MainActivity::class.java).addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    )
+                )
             }
         }, 500)
     }
@@ -115,13 +125,10 @@ class MainActivity : ComponentActivity() {
                         "• запускаться автоматически\n" +
                         "• работать в полноэкранном режиме\n" +
                         "• восстанавливаться после перезагрузки\n\n" +
-
                         "Закрывать приложение не требуется."
             )
             .setPositiveButton("Понятно") { dialog, _ -> dialog.dismiss() }
             .setCancelable(false)
             .show()
     }
-
 }
-
